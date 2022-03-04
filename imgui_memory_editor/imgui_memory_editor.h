@@ -162,10 +162,7 @@ struct MemoryEditor
     void CalcSizes(Sizes& s, size_t mem_size, size_t base_display_addr)
     {
         ImGuiStyle& style = ImGui::GetStyle();
-        s.AddrDigitsCount = OptAddrDigitsCount;
-        if (s.AddrDigitsCount == 0)
-            for (size_t n = base_display_addr + mem_size - 1; n > 0; n >>= 4)
-                s.AddrDigitsCount++;
+        s.AddrDigitsCount = 4;
         s.LineHeight = ImGui::GetTextLineHeight();
         s.GlyphWidth = ImGui::CalcTextSize("F").x + 1;                  // We assume the font is mono-space
         s.HexCellWidth = (float)(int)(s.GlyphWidth * 2.5f);             // "FF " we include trailing space in the width to easily catch clicks everywhere
