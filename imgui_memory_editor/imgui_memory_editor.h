@@ -403,20 +403,21 @@ struct MemoryEditor
                     ImGui::PushID(line_i);
                     if (ImGui::InvisibleButton("ascii", ImVec2(s.PosAsciiEnd - s.PosAsciiStart, s.LineHeight)))
                     {
-                        DataEditingAddr = DataPreviewAddr = addr + (size_t)((ImGui::GetIO().MousePos.x - pos.x) / s.GlyphWidth);
-                        DataEditingTakeFocus = true;
+                        // DataEditingAddr = DataPreviewAddr = addr + (size_t)((ImGui::GetIO().MousePos.x - pos.x) / s.GlyphWidth);
+                        // DataEditingTakeFocus = true;
                     }
                     ImGui::PopID();
                     for (int n = 0; n < Cols && addr < mem_size; n++, addr++)
                     {
-                        if (addr == DataEditingAddr)
+                        if (addr == DataEditingAddr && false)
                         {
                             draw_list->AddRectFilled(pos, ImVec2(pos.x + s.GlyphWidth, pos.y + s.LineHeight), ImGui::GetColorU32(ImGuiCol_FrameBg));
                             draw_list->AddRectFilled(pos, ImVec2(pos.x + s.GlyphWidth, pos.y + s.LineHeight), ImGui::GetColorU32(ImGuiCol_TextSelectedBg));
                         }
                         unsigned char c = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
                         char display_c = (c < 32 || c >= 128) ? '.' : c;
-                        draw_list->AddText(pos, (display_c == c) ? color_text : color_disabled, &display_c, &display_c + 1);
+                        char* opcode = "NOP";
+                        draw_list->AddText(pos, mem_data[line_i] == 0x00 ? color_disabled : color_text, opcode, opcode + 3);
                         pos.x += s.GlyphWidth;
                     }
                 }
