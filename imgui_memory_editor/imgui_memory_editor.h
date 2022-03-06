@@ -50,6 +50,9 @@
 
 #include <stdio.h>      // sprintf, scanf
 #include <stdint.h>     // uint8_t, etc.
+#include <string>
+
+#include "../../../../../Shared/Include/ISA.h"
 
 #ifdef _MSC_VER
 #define _PRISizeT   "I"
@@ -265,7 +268,11 @@ struct MemoryEditor
         const char* format_byte = OptUpperCaseHex ? "%02X" : "%02x";
         const char* format_byte_space = OptUpperCaseHex ? "%02X " : "%02x ";
 
+
         while (clipper.Step())
+        {
+            Opcode lastOpcode = (Opcode)mem_data[clipper.DisplayStart * Cols];
+            size_t currentOpcodeLength = OpcodeInfo[lastOpcode].Length;
             for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
             {
                 size_t addr = (size_t)(line_i * Cols);
@@ -413,12 +420,33 @@ struct MemoryEditor
                         }
                         unsigned char c = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
                         char display_c = (c < 32 || c >= 128) ? '.' : c;
-                        char* opcode = "NOP";
-                        draw_list->AddText(pos, mem_data[line_i] == 0x00 ? color_disabled : color_text, opcode, opcode + 3);
+
+                        std::string opcode;
+
+                        if (currentOpcodeLength == OpcodeInfo[lastOpcode].Length)
+                        {
+                            opcode = "MNEMONIC";
+                        }
+                        else if (currentOpcodeLength == 0)
+                        {
+                            opcode = "";
+                            lastOpcode = (Opcode)mem_data[addr + 1];
+                        }
+                        else
+                        {
+                            opcode = "";
+                        }
+                        currentOpcodeLength--;
+
+                        const Opcode& opt = (Opcode)mem_data[addr];
+                        opcode = OpcodeInfo.find(opt) != OpcodeInfo.end() ? OpcodeInfo[opt].Mnemonic : "";
+
+                        draw_list->AddText(pos, mem_data[line_i] == 0x00 ? color_disabled : color_text, opcode.c_str(), opcode.c_str() + opcode.size());
                         pos.x += s.GlyphWidth;
                     }
                 }
             }
+        }
         ImGui::PopStyleVar(2);
         ImGui::EndChild();
 
