@@ -51,6 +51,7 @@
 #include <stdio.h>      // sprintf, scanf
 #include <stdint.h>     // uint8_t, etc.
 #include <string>
+#include <regex>
 
 #include "../../../../../Shared/Include/ISA.h"
 
@@ -184,7 +185,7 @@ struct MemoryEditor
     }
 
     // Standalone Memory Editor window
-    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000)
+    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, size_t selected_addr = 0x0000)
     {
         Sizes s;
         CalcSizes(s, mem_size, base_display_addr);
@@ -196,7 +197,7 @@ struct MemoryEditor
         {
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
                 ImGui::OpenPopup("context");
-            DrawContents(mem_data, mem_size, base_display_addr);
+            DrawContents(mem_data, mem_size, base_display_addr, selected_addr);
             if (ContentsWidthChanged)
             {
                 CalcSizes(s, mem_size, base_display_addr);
@@ -207,7 +208,7 @@ struct MemoryEditor
     }
 
     // Memory Editor contents only
-    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000)
+    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, size_t selected_addr = 0x0000)
     {
         if (Cols < 1)
             Cols = 1;
@@ -268,15 +269,20 @@ struct MemoryEditor
         const char* format_byte = OptUpperCaseHex ? "%02X" : "%02x";
         const char* format_byte_space = OptUpperCaseHex ? "%02X " : "%02x ";
 
-
         while (clipper.Step())
         {
-            Opcode lastOpcode = (Opcode)mem_data[clipper.DisplayStart * Cols];
-            size_t currentOpcodeLength = OpcodeInfo[lastOpcode].Length;
             for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
             {
                 size_t addr = (size_t)(line_i * Cols);
-                ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+
+                if (base_display_addr + addr == selected_addr)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(ImColor(100, 100, 255)));
+                    ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                    ImGui::PopStyleColor();
+                }
+                else
+                    ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
 
                 // Draw Hexadecimal
                 for (int n = 0; n < Cols && addr < mem_size; n++, addr++)
@@ -421,25 +427,8 @@ struct MemoryEditor
                         unsigned char c = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
                         char display_c = (c < 32 || c >= 128) ? '.' : c;
 
-                        std::string opcode;
-
-                        if (currentOpcodeLength == OpcodeInfo[lastOpcode].Length)
-                        {
-                            opcode = "MNEMONIC";
-                        }
-                        else if (currentOpcodeLength == 0)
-                        {
-                            opcode = "";
-                            lastOpcode = (Opcode)mem_data[addr + 1];
-                        }
-                        else
-                        {
-                            opcode = "";
-                        }
-                        currentOpcodeLength--;
-
-                        const Opcode& opt = (Opcode)mem_data[addr];
-                        opcode = OpcodeInfo.find(opt) != OpcodeInfo.end() ? OpcodeInfo[opt].Mnemonic : "";
+                        Opcode opc = (Opcode)mem_data[addr];
+                        std::string opcode = OpcodeInfo.find(opc) == OpcodeInfo.end() ? "" : OpcodeInfo[opc].Mnemonic;
 
                         draw_list->AddText(pos, mem_data[line_i] == 0x00 ? color_disabled : color_text, opcode.c_str(), opcode.c_str() + opcode.size());
                         pos.x += s.GlyphWidth;
