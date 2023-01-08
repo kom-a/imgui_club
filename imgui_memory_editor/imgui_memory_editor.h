@@ -53,7 +53,7 @@
 #include <string>
 #include <regex>
 
-#include "../../../../../Shared/Include/ISA.h"
+#include "Emulator.h"
 
 #ifdef _MSC_VER
 #define _PRISizeT   "I"
