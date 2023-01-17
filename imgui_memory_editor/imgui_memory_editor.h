@@ -185,7 +185,7 @@ struct MemoryEditor
     }
 
     // Standalone Memory Editor window
-    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, size_t selected_addr = 0x0000)
+    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         Sizes s;
         CalcSizes(s, mem_size, base_display_addr);
@@ -197,7 +197,7 @@ struct MemoryEditor
         {
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
                 ImGui::OpenPopup("context");
-            DrawContents(mem_data, mem_size, base_display_addr, selected_addr);
+            DrawContents(mem_data, mem_size, base_display_addr, selected_addr, selected_label);
             if (ContentsWidthChanged)
             {
                 CalcSizes(s, mem_size, base_display_addr);
@@ -208,7 +208,7 @@ struct MemoryEditor
     }
 
     // Memory Editor contents only
-    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, size_t selected_addr = 0x0000)
+    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         if (Cols < 1)
             Cols = 1;
@@ -269,28 +269,41 @@ struct MemoryEditor
         const char* format_byte = OptUpperCaseHex ? "%02X" : "%02x";
         const char* format_byte_space = OptUpperCaseHex ? "%02X " : "%02x ";
 
+        const std::string selected_placeholder = selected_label ? std::string("").append(strlen(selected_label), ' ') : "";
+
         while (clipper.Step())
         {
             for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
             {
                 size_t addr = (size_t)(line_i * Cols);
 
-                if (base_display_addr + addr == selected_addr)
+                // Draw address
+                if (selected_addr)
                 {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(ImColor(100, 100, 255)));
-                    ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
-                    ImGui::PopStyleColor();
+                    if (base_display_addr + addr == *selected_addr)
+                    {
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(100, 100, 250, 255));
+                        ImGui::Text(selected_label);
+                        ImGui::SameLine();
+                        ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                        ImGui::PopStyleColor();
+                    }
+                    else
+                    {
+                        ImGui::Text(selected_placeholder.c_str());
+                        ImGui::SameLine();
+                        ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                    }
                 }
                 else
+                {
                     ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
-
+                }
+                
                 // Draw Hexadecimal
                 for (int n = 0; n < Cols && addr < mem_size; n++, addr++)
                 {
-                    float byte_pos_x = s.PosHexStart + s.HexCellWidth * n;
-                    if (OptMidColsCount > 0)
-                        byte_pos_x += (float)(n / OptMidColsCount) * s.SpacingBetweenMidCols;
-                    ImGui::SameLine(byte_pos_x);
+                    ImGui::SameLine();
 
                     // Draw highlight
                     bool is_highlight_from_user_range = (addr >= HighlightMin && addr < HighlightMax);
@@ -407,7 +420,7 @@ struct MemoryEditor
                 if (OptShowAscii)
                 {
                     // Draw ASCII values
-                    ImGui::SameLine(s.PosAsciiStart);
+                    ImGui::SameLine();
                     ImVec2 pos = ImGui::GetCursorScreenPos();
                     addr = line_i * Cols;
                     ImGui::PushID(line_i);
