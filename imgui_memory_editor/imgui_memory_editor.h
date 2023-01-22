@@ -53,7 +53,7 @@
 #include <string>
 #include <regex>
 
-#include "Emulator.h"
+#include <KR580.h>
 
 #ifdef _MSC_VER
 #define _PRISizeT   "I"
