@@ -443,6 +443,7 @@ struct MemoryEditor
                         unsigned char c = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
                         char display_c = (c < 32 || c >= 128) ? '.' : c;
 
+                        using namespace KR580;
                         Opcode opc = (Opcode)mem_data[addr];
                         std::string opcode = OpcodeInfo.find(opc) == OpcodeInfo.end() ? "" : OpcodeInfo[opc].Mnemonic;
 
