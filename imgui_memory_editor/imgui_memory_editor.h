@@ -53,6 +53,7 @@
 #include <string>
 #include <regex>
 
+#include <imgui/imgui.h>
 #include <KR580.h>
 
 #ifdef _MSC_VER
