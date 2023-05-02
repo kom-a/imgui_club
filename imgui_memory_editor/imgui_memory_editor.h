@@ -53,7 +53,8 @@
 #include <string>
 #include <regex>
 
-#include "../../../../../Shared/Include/ISA.h"
+#include <imgui/imgui.h>
+#include <KR580.h>
 
 #ifdef _MSC_VER
 #define _PRISizeT   "I"
@@ -92,7 +93,7 @@ struct MemoryEditor
     int             OptAddrDigitsCount;                         // = 0      // number of addr digits to display (default calculated based on maximum displayed addr).
     float           OptFooterExtraHeight;                       // = 0      // space to reserve at the bottom of the widget to add custom widgets
     ImU32           HighlightColor;                             //          // background color of highlighted bytes.
-    ImU8            (*ReadFn)(const ImU8* data, size_t off);    // = 0      // optional handler to read bytes.
+    ImU8(*ReadFn)(const ImU8* data, size_t off);    // = 0      // optional handler to read bytes.
     void            (*WriteFn)(ImU8* data, size_t off, ImU8 d); // = 0      // optional handler to write bytes.
     bool            (*HighlightFn)(const ImU8* data, size_t off);//= 0      // optional handler to return Highlight property (to support non-contiguous highlighting).
 
@@ -185,7 +186,7 @@ struct MemoryEditor
     }
 
     // Standalone Memory Editor window
-    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, bool reverse = false, const char* selected_label = nullptr, size_t selected_addr = (size_t)-1)
+    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, bool reversed = false, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         Sizes s;
         CalcSizes(s, mem_size, base_display_addr);
@@ -197,7 +198,7 @@ struct MemoryEditor
         {
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
                 ImGui::OpenPopup("context");
-            DrawContents(mem_data, mem_size, base_display_addr, reverse, selected_label, selected_addr);
+            DrawContents(mem_data, mem_size, base_display_addr, reversed, selected_addr, selected_label);
             if (ContentsWidthChanged)
             {
                 CalcSizes(s, mem_size, base_display_addr);
@@ -208,7 +209,7 @@ struct MemoryEditor
     }
 
     // Memory Editor contents only
-    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, bool reverse = false, const char* selected_label = nullptr, size_t selected_addr = (size_t)-1)
+    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, bool reversed = false, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         if (Cols < 1)
             Cols = 1;
@@ -250,16 +251,14 @@ struct MemoryEditor
         if (DataEditingAddr != (size_t)-1)
         {
             // Move cursor but only apply on next frame so scrolling with be synchronized (because currently we can't change the scrolling while the window is being rendered)
-            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)) && (ptrdiff_t)DataEditingAddr >= (ptrdiff_t)Cols)                     { data_editing_addr_next = DataEditingAddr - Cols; }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)) && (ptrdiff_t)DataEditingAddr < (ptrdiff_t)mem_size - Cols)    { data_editing_addr_next = DataEditingAddr + Cols; }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)) && (ptrdiff_t)DataEditingAddr > (ptrdiff_t)0)                  { data_editing_addr_next = DataEditingAddr - 1; }
-            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow)) && (ptrdiff_t)DataEditingAddr < (ptrdiff_t)mem_size - 1)      { data_editing_addr_next = DataEditingAddr + 1; }
+            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow)) && (ptrdiff_t)DataEditingAddr >= (ptrdiff_t)Cols) { data_editing_addr_next = DataEditingAddr - Cols; }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow)) && (ptrdiff_t)DataEditingAddr < (ptrdiff_t)mem_size - Cols) { data_editing_addr_next = DataEditingAddr + Cols; }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow)) && (ptrdiff_t)DataEditingAddr > (ptrdiff_t)0) { data_editing_addr_next = DataEditingAddr - 1; }
+            else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow)) && (ptrdiff_t)DataEditingAddr < (ptrdiff_t)mem_size - 1) { data_editing_addr_next = DataEditingAddr + 1; }
         }
 
         // Draw vertical separator
         ImVec2 window_pos = ImGui::GetWindowPos();
-        if (OptShowAscii)
-            draw_list->AddLine(ImVec2(window_pos.x + s.PosAsciiStart - s.GlyphWidth + ImGui::CalcTextSize("PC -> ").x, window_pos.y), ImVec2(window_pos.x + s.PosAsciiStart - s.GlyphWidth + ImGui::CalcTextSize("PC -> ").x, window_pos.y + 9999), ImGui::GetColorU32(ImGuiCol_Border));
 
         const ImU32 color_text = ImGui::GetColorU32(ImGuiCol_Text);
         const ImU32 color_disabled = OptGreyOutZeroes ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : color_text;
@@ -269,35 +268,55 @@ struct MemoryEditor
         const char* format_byte = OptUpperCaseHex ? "%02X" : "%02x";
         const char* format_byte_space = OptUpperCaseHex ? "%02X " : "%02x ";
 
-        const float seleceted_label_text_size = selected_label ? ImGui::CalcTextSize(selected_label).x : 0;
+        const std::string selected_placeholder = selected_label ? std::string("").append(strlen(selected_label), ' ') : "";
 
         while (clipper.Step())
         {
-            for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
+            // 0BB0 - 0B80 (Stack size)
+
+            // display only visible lines
+            int displayStart = reversed ? mem_size - clipper.DisplayStart - 1 : clipper.DisplayStart;
+            int displayEnd = reversed ? mem_size - clipper.DisplayEnd : clipper.DisplayEnd;
+            int displayStep = reversed ? -1 : 1;
+
+            for (int line_i = displayStart;
+                reversed ? line_i >= displayEnd : line_i < displayEnd;
+                line_i += displayStep)
             {
                 size_t addr = (size_t)(line_i * Cols);
-                const int display_address = reverse ? base_display_addr + mem_size - addr - 1 : base_display_addr + addr;
+                //if (reversed)
+                //    addr = mem_size - addr - 1;
 
-                if (selected_label)
+                // Draw address
+                if (selected_addr)
                 {
-                    if (selected_addr != (size_t)-1 && display_address == selected_addr)
+                    if (base_display_addr + addr == *selected_addr)
                     {
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(100, 100, 250, 255));
                         ImGui::Text(selected_label);
                         ImGui::SameLine();
+                        ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                        ImGui::PopStyleColor();
                     }
                     else
-                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + seleceted_label_text_size);
+                    {
+                        ImGui::PushID(addr);
+                        if (ImGui::InvisibleButton("select_addr", ImGui::CalcTextSize(selected_placeholder.c_str())))
+                            *selected_addr = base_display_addr + addr;
+                        ImGui::PopID();
+                        ImGui::SameLine();
+                        ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                    }
                 }
-
-                ImGui::Text(format_address, s.AddrDigitsCount, display_address);
+                else
+                {
+                    ImGui::Text(format_address, s.AddrDigitsCount, base_display_addr + addr);
+                }
 
                 // Draw Hexadecimal
                 for (int n = 0; n < Cols && addr < mem_size; n++, addr++)
                 {
-                    float byte_pos_x = s.PosHexStart + s.HexCellWidth * n;
-                    if (OptMidColsCount > 0)
-                        byte_pos_x += (float)(n / OptMidColsCount) * s.SpacingBetweenMidCols;
-                    ImGui::SameLine(byte_pos_x + seleceted_label_text_size);
+                    ImGui::SameLine();
 
                     // Draw highlight
                     bool is_highlight_from_user_range = (addr >= HighlightMin && addr < HighlightMax);
@@ -324,10 +343,9 @@ struct MemoryEditor
                         ImGui::PushID((void*)addr);
                         if (DataEditingTakeFocus)
                         {
-                            const int mem_addr = reverse ? mem_size - addr - 1 : addr;
                             ImGui::SetKeyboardFocusHere(0);
-                            sprintf(AddrInputBuf, format_data, s.AddrDigitsCount, base_display_addr + mem_addr);
-                            sprintf(DataInputBuf, format_byte, ReadFn ? ReadFn(mem_data, mem_addr) : mem_data[mem_addr]);
+                            sprintf(AddrInputBuf, format_data, s.AddrDigitsCount, base_display_addr + addr);
+                            sprintf(DataInputBuf, format_byte, ReadFn ? ReadFn(mem_data, addr) : mem_data[addr]);
                         }
                         struct UserData
                         {
@@ -354,8 +372,7 @@ struct MemoryEditor
                         };
                         UserData user_data;
                         user_data.CursorPos = -1;
-                        const int mem_addr = reverse ? mem_size - addr - 1 : addr; 
-                        sprintf(user_data.CurrentBufOverwrite, format_byte, ReadFn ? ReadFn(mem_data, mem_addr) : mem_data[mem_addr]);
+                        sprintf(user_data.CurrentBufOverwrite, format_byte, ReadFn ? ReadFn(mem_data, addr) : mem_data[addr]);
                         ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways;
 #if IMGUI_VERSION_NUM >= 18104
                         flags |= ImGuiInputTextFlags_AlwaysOverwrite;
@@ -375,19 +392,17 @@ struct MemoryEditor
                         unsigned int data_input_value = 0;
                         if (data_write && sscanf(DataInputBuf, "%X", &data_input_value) == 1)
                         {
-                            const int mem_addr = reverse ? mem_size - addr - 1 : addr;
                             if (WriteFn)
-                                WriteFn(mem_data, mem_addr, (ImU8)data_input_value);
+                                WriteFn(mem_data, addr, (ImU8)data_input_value);
                             else
-                                mem_data[mem_addr] = (ImU8)data_input_value;
+                                mem_data[addr] = (ImU8)data_input_value;
                         }
                         ImGui::PopID();
                     }
                     else
                     {
                         // NB: The trailing space is not visible but ensure there's no gap that the mouse cannot click on.
-                        const int mem_addr = reverse ? mem_size - addr - 1: addr;
-                        ImU8 b = ReadFn ? ReadFn(mem_data, mem_addr) : mem_data[mem_addr];
+                        ImU8 b = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
 
                         if (OptShowHexII)
                         {
@@ -418,7 +433,7 @@ struct MemoryEditor
                 if (OptShowAscii)
                 {
                     // Draw ASCII values
-                    ImGui::SameLine(s.PosAsciiStart + seleceted_label_text_size);
+                    ImGui::SameLine();
                     ImVec2 pos = ImGui::GetCursorScreenPos();
                     addr = line_i * Cols;
                     ImGui::PushID(line_i);
@@ -438,6 +453,7 @@ struct MemoryEditor
                         unsigned char c = ReadFn ? ReadFn(mem_data, addr) : mem_data[addr];
                         char display_c = (c < 32 || c >= 128) ? '.' : c;
 
+                        using namespace KR580;
                         Opcode opc = (Opcode)mem_data[addr];
                         std::string opcode = OpcodeInfo.find(opc) == OpcodeInfo.end() ? "" : OpcodeInfo[opc].Mnemonic;
 
@@ -445,6 +461,7 @@ struct MemoryEditor
                         pos.x += s.GlyphWidth;
                     }
                 }
+
             }
         }
         ImGui::PopStyleVar(2);
@@ -455,7 +472,7 @@ struct MemoryEditor
 
         if (data_next && DataEditingAddr + 1 < mem_size)
         {
-            DataEditingAddr = DataPreviewAddr = DataEditingAddr + 1;
+            DataEditingAddr = DataPreviewAddr = reversed ? DataEditingAddr - 1 : DataEditingAddr + 1;
             DataEditingTakeFocus = true;
         }
         else if (data_editing_addr_next != (size_t)-1)
@@ -484,6 +501,7 @@ struct MemoryEditor
         ImGuiStyle& style = ImGui::GetStyle();
         const char* format_range = OptUpperCaseHex ? "Range %0*" _PRISizeT "X..%0*" _PRISizeT "X" : "Range %0*" _PRISizeT "x..%0*" _PRISizeT "x";
 
+#if 0
         // Options menu
         if (ImGui::Button("Options"))
             ImGui::OpenPopup("context");
@@ -501,6 +519,7 @@ struct MemoryEditor
         }
 
         ImGui::SameLine();
+#endif
         ImGui::Text(format_range, s.AddrDigitsCount, base_display_addr, s.AddrDigitsCount, base_display_addr + mem_size - 1);
         ImGui::SameLine();
         ImGui::SetNextItemWidth((s.AddrDigitsCount + 1) * s.GlyphWidth + style.FramePadding.x * 2.0f);
