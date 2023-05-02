@@ -272,11 +272,20 @@ struct MemoryEditor
 
         while (clipper.Step())
         {
-            for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
+            // 0BB0 - 0B80 (Stack size)
+
+            // display only visible lines
+            int displayStart = reversed ? mem_size - clipper.DisplayStart - 1 : clipper.DisplayStart;
+            int displayEnd = reversed ? mem_size - clipper.DisplayEnd : clipper.DisplayEnd;
+            int displayStep = reversed ? -1 : 1;
+
+            for (int line_i = displayStart;
+                reversed ? line_i >= displayEnd : line_i < displayEnd;
+                line_i += displayStep)
             {
                 size_t addr = (size_t)(line_i * Cols);
-                if (reversed)
-                    addr = mem_size - addr - 1;
+                //if (reversed)
+                //    addr = mem_size - addr - 1;
 
                 // Draw address
                 if (selected_addr)
@@ -492,6 +501,7 @@ struct MemoryEditor
         ImGuiStyle& style = ImGui::GetStyle();
         const char* format_range = OptUpperCaseHex ? "Range %0*" _PRISizeT "X..%0*" _PRISizeT "X" : "Range %0*" _PRISizeT "x..%0*" _PRISizeT "x";
 
+#if 0
         // Options menu
         if (ImGui::Button("Options"))
             ImGui::OpenPopup("context");
@@ -509,6 +519,7 @@ struct MemoryEditor
         }
 
         ImGui::SameLine();
+#endif
         ImGui::Text(format_range, s.AddrDigitsCount, base_display_addr, s.AddrDigitsCount, base_display_addr + mem_size - 1);
         ImGui::SameLine();
         ImGui::SetNextItemWidth((s.AddrDigitsCount + 1) * s.GlyphWidth + style.FramePadding.x * 2.0f);
