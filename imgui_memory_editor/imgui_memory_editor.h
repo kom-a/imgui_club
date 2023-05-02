@@ -89,6 +89,7 @@ struct MemoryEditor
     bool            OptShowAscii;                               // = true   // display ASCII representation on the right side.
     bool            OptGreyOutZeroes;                           // = true   // display null/zero bytes using the TextDisabled color.
     bool            OptUpperCaseHex;                            // = true   // display hexadecimal values as "FF" instead of "ff".
+    bool            OptReverse;                                 // = false  // display addresses in reverse order
     int             OptMidColsCount;                            // = 8      // set to 0 to disable extra spacing between every mid-cols.
     int             OptAddrDigitsCount;                         // = 0      // number of addr digits to display (default calculated based on maximum displayed addr).
     float           OptFooterExtraHeight;                       // = 0      // space to reserve at the bottom of the widget to add custom widgets
@@ -121,6 +122,7 @@ struct MemoryEditor
         OptShowAscii = true;
         OptGreyOutZeroes = true;
         OptUpperCaseHex = true;
+        OptReverse = false;
         OptMidColsCount = 8;
         OptAddrDigitsCount = 0;
         OptFooterExtraHeight = 0.0f;
@@ -186,7 +188,7 @@ struct MemoryEditor
     }
 
     // Standalone Memory Editor window
-    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, bool reversed = false, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
+    void DrawWindow(const char* title, void* mem_data, size_t mem_size, size_t base_display_addr = 0x0000, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         Sizes s;
         CalcSizes(s, mem_size, base_display_addr);
@@ -198,7 +200,7 @@ struct MemoryEditor
         {
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
                 ImGui::OpenPopup("context");
-            DrawContents(mem_data, mem_size, base_display_addr, reversed, selected_addr, selected_label);
+            DrawContents(mem_data, mem_size, base_display_addr, selected_addr, selected_label);
             if (ContentsWidthChanged)
             {
                 CalcSizes(s, mem_size, base_display_addr);
@@ -209,7 +211,7 @@ struct MemoryEditor
     }
 
     // Memory Editor contents only
-    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, bool reversed = false, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
+    void DrawContents(void* mem_data_void, size_t mem_size, size_t base_display_addr = 0x0000, uint16_t* selected_addr = nullptr, const char* selected_label = nullptr)
     {
         if (Cols < 1)
             Cols = 1;
@@ -272,20 +274,11 @@ struct MemoryEditor
 
         while (clipper.Step())
         {
-            // 0BB0 - 0B80 (Stack size)
-
-            // display only visible lines
-            int displayStart = reversed ? mem_size - clipper.DisplayStart - 1 : clipper.DisplayStart;
-            int displayEnd = reversed ? mem_size - clipper.DisplayEnd : clipper.DisplayEnd;
-            int displayStep = reversed ? -1 : 1;
-
-            for (int line_i = displayStart;
-                reversed ? line_i >= displayEnd : line_i < displayEnd;
-                line_i += displayStep)
+            for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++)// display only visible lines
             {
                 size_t addr = (size_t)(line_i * Cols);
-                //if (reversed)
-                //    addr = mem_size - addr - 1;
+                if (OptReverse)
+                    addr = mem_size - addr - 1;
 
                 // Draw address
                 if (selected_addr)
@@ -472,7 +465,7 @@ struct MemoryEditor
 
         if (data_next && DataEditingAddr + 1 < mem_size)
         {
-            DataEditingAddr = DataPreviewAddr = reversed ? DataEditingAddr - 1 : DataEditingAddr + 1;
+            DataEditingAddr = DataPreviewAddr = OptReverse ? DataEditingAddr - 1 : DataEditingAddr + 1;
             DataEditingTakeFocus = true;
         }
         else if (data_editing_addr_next != (size_t)-1)
